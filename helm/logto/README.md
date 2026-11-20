@@ -80,6 +80,55 @@ Only the Logto application Pods receive the Redis configuration, not the databas
 already set `REDIS_URL` through `extraEnv`, keep `redis.mode=disabled` or move that setting into
 the Redis Secret configuration; do not use both.
 
+## Optional Azure Blob Storage
+
+For features such as avatar uploads, configure an existing Azure Storage account and blob container
+as the [file storage provider](https://docs.logto.io/logto-oss/file-storage-provider#azure-storage).
+The chart does not provision storage or manage its credentials. After the database is initialized,
+run the following once from a trusted terminal. Keep `azure-storage.json` in a protected local
+file, outside source control:
+
+```json
+{
+  "provider": "AzureStorage",
+  "connectionString": "<Azure Storage connection string>",
+  "container": "logto"
+}
+```
+
+```sh
+kubectl -n logto exec -i deploy/logto -c logto -- \
+  sh -ec 'config=$(cat); npm run cli -- db system set storageProvider "$config"' \
+  < azure-storage.json
+kubectl -n logto rollout restart deployment/logto
+kubectl -n logto rollout status deployment/logto
+```
+
+Adjust the namespace and Deployment name for your release. The CLI stores the provider settings
+in the shared Logto database; all replicas pick up the change after restarting. Avoid printing
+the connection string or committing it to Helm values. If the feature needs clients to read the
+uploaded files, configure a reachable storage endpoint or CDN (`publicUrl`); keep write access
+limited to Logto. [Bring your UI](https://docs.logto.io/logto-oss/self-hosted-license#set-up-storage-for-bring-your-ui)
+requires a self-hosted license and uses the separate `experienceBlobsProvider` setting.
+
+## Optional Secret Vault
+
+To enable [Secret Vault](https://docs.logto.io/secret-vault), create an existing Kubernetes Secret
+in the release namespace with a `SECRET_VAULT_KEK` key. Its value should be a base64-encoded random
+32-byte key (distinct from Kubernetes' own encoding of Secret data). Reference it in Helm values:
+
+```yaml
+extraEnv:
+  - name: SECRET_VAULT_KEK
+    valueFrom:
+      secretKeyRef:
+        name: logto-vault
+        key: SECRET_VAULT_KEK
+```
+
+Keep the same key across replicas and upgrades, and back it up separately. Do not generate a new
+key when rolling out new Pods: without the original key, Logto cannot decrypt existing vault data.
+
 ## Pod configuration
 
 `extraEnv` applies only to Logto application Pods; use `database.extraEnv` for seed and migration
