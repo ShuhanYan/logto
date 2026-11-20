@@ -11,10 +11,14 @@ app.kubernetes.io/name: {{ .Chart.Name }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
-{{- define "logto.labels" -}}
+{{- define "logto.chartLabels" -}}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" | quote }}
-app.kubernetes.io/version: {{ default .Chart.AppVersion .Values.image.tag | trunc 63 | trimAll "-_." | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service | quote }}
+{{- end -}}
+
+{{- define "logto.labels" -}}
+{{ include "logto.chartLabels" . }}
+app.kubernetes.io/version: {{ default .Chart.AppVersion .Values.image.tag | trunc 63 | trimAll "-_." | quote }}
 {{ include "logto.selectorLabels" . }}
 {{- end -}}
 
@@ -58,6 +62,12 @@ app.kubernetes.io/name: {{ include "logto.redisName" . | quote }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
+{{- define "logto.redisLabels" -}}
+{{ include "logto.chartLabels" . }}
+{{ include "logto.redisSelectorLabels" . }}
+app.kubernetes.io/component: cache
+{{- end -}}
+
 {{- define "logto.redisPasswordEnv" -}}
 - name: REDIS_PASSWORD
   valueFrom:
@@ -67,7 +77,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{- define "logto.redisEnv" -}}
-{{- $mode := .Values.redis.mode -}}
+{{- $mode := default "disabled" (.Values.redis | default dict).mode -}}
 {{- if not (has $mode (list "disabled" "bundled" "external")) -}}
 {{- fail "redis.mode must be disabled, bundled, or external" -}}
 {{- end -}}

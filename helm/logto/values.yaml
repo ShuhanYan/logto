@@ -34,7 +34,7 @@ redis:
   existingSecret: ""
   passwordKey: REDIS_PASSWORD # Used in bundled mode; use a random URL-safe password.
   urlKey: REDIS_URL # Used in external mode.
-  image: redis:7.4-alpine
+  image: redis:7.4-alpine@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe
   resources: {}
 
 # Public origins, required when using Ingress. Keep the two hosts separate.
@@ -54,7 +54,7 @@ ingress:
 extraEnv: []
 resources: {}
 
-# Applied to application and database Job Pods. An existing ServiceAccount is optional.
+# Applied to application, database Job, and bundled Redis Pods. A ServiceAccount is optional.
 nodeSelector: {}
 tolerations: []
 affinity: {}

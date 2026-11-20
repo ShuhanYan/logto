@@ -5,16 +5,17 @@ metadata:
   labels:
     {{- include "logto.labels" . | nindent 4 }}
 spec:
-  {{- if not .Values.autoscaling.enabled }}
+  {{- if not (dig "enabled" false (.Values.autoscaling | default dict)) }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
   strategy:
-    {{- if eq .Values.strategy.type "Recreate" }}
+    {{- $strategy := .Values.strategy | default (dict "type" "RollingUpdate") }}
+    {{- if eq $strategy.type "Recreate" }}
     type: Recreate
     # Clear the API-defaulted RollingUpdate settings when switching strategies.
     rollingUpdate: null
     {{- else }}
-    {{- toYaml .Values.strategy | nindent 4 }}
+    {{- toYaml $strategy | nindent 4 }}
     {{- end }}
   selector:
     matchLabels:
@@ -79,8 +80,7 @@ spec:
               path: /api/status
               port: http
           livenessProbe:
-            httpGet:
-              path: /api/status
+            tcpSocket:
               port: http
             periodSeconds: 15
           resources:

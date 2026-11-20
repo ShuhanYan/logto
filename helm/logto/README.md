@@ -15,8 +15,10 @@ helm install logto ./helm/logto --namespace logto --wait --timeout 5m \
   --set database.seedOnInstall=true
 ```
 
-Leave `seedOnInstall` disabled for an existing database; make sure its schema matches the target
-image before installing. The seed option runs one Helm hook Job before creating the Deployment,
+Leave `seedOnInstall` disabled for an existing database. The seed Job uses `--swe` (skip when the
+Logto config table exists); it does not upgrade an older database. Apply any required alterations
+with the target image before installing against an existing database. Otherwise, new Pods may
+fail the startup schema checks. The seed option runs one Helm hook Job before creating the Deployment,
 not an init container that runs in every replica. The default Pod runs as a non-root user and has
 a writable, Pod-local directory for the alteration scripts that Logto copies at startup.
 Containers use a read-only root filesystem by default. `/tmp` (including the npm cache) and the
@@ -31,8 +33,10 @@ curl -fsS http://localhost:3001/api/status
 curl -fsS http://localhost:3001/oidc/.well-known/openid-configuration
 ```
 
-Startup, readiness and liveness probes check the core service on port 3001. They do not monitor
-the Admin Console listener on port 3002; monitor that separately if you expose it.
+Startup and readiness use `/api/status` on the core port (3001). That route can depend on
+PostgreSQL, so liveness only checks whether the core TCP listener is open. An outage can make
+Pods unready without liveness restarting them. No probe checks the Admin Console listener on
+port 3002; monitor it separately if you expose it.
 
 For Ingress, use a controller already installed in the cluster and provide the public origins.
 The origins must use the matching host and `http` or `https`, with no explicit port, path, or
@@ -135,8 +139,10 @@ key when rolling out new Pods: without the original key, Logto cannot decrypt ex
 Jobs. Both accept Kubernetes `EnvVar` entries, including `valueFrom` for Secret references. Use
 `database.existingSecret` and `database.secretKey` to configure `DB_URL` for both.
 
-`nodeSelector`, `tolerations`, `affinity`, `podAnnotations` and `serviceAccountName` apply to both
-Pod types. Provide an existing ServiceAccount in the release namespace if you set a name. The
+`nodeSelector`, `tolerations`, `affinity`, `podAnnotations`, `serviceAccountName` and
+`imagePullSecrets` apply to application, database Job, and bundled Redis Pods. Use label selectors
+in affinity rules if you only want them to match one workload. Provide an existing ServiceAccount
+in the release namespace if you set a name. The
 chart disables automatic ServiceAccount token mounts. Workload identity injection by the platform
 may still work independently of that setting.
 
@@ -166,10 +172,31 @@ budget. When enabling the HPA on an existing release, plan for a possible brief 
 replica as Helm removes the fixed replica count. For a database upgrade that requires downtime,
 disable autoscaling first so the HPA cannot restore the old Pods before the migration.
 
+## PostgreSQL connection budget
+
+Each Logto Pod uses one shared pool plus one pool per loaded tenant. The default pool limit is
+`DATABASE_POOL_SIZE=20` for each pool. With both OSS tenants (`default` and `admin`) loaded, the
+configured ceiling is `(1 + 2) × 20 = 60` connections per Pod, or 300 for five Pods. These are
+configured limits, not measurements of concurrent connections. Budget for peak live Pods,
+including rolling-update surge; reserve additional capacity for the migration Job (which uses
+its own CLI pool), PostgreSQL reserved connections, and other clients. Check your server's
+`max_connections` and use `pg_stat_activity` under representative load to check actual usage.
+
+For example, to cap the application pools at 5 connections each (up to 75 across five standard
+OSS Pods, before surge or other clients), tune the application environment:
+
+```yaml
+extraEnv:
+  - name: DATABASE_POOL_SIZE
+    value: "5"
+```
+
 ## Upgrade
 
 Read the [Logto upgrade guide](https://docs.logto.io/logto-oss/upgrading-oss-version), back up the
-database, and pin the target image version. When the database is not migrated externally,
+database, and pin the target image version. Pass your values file when upgrading; if carrying
+forward settings from an older experimental chart, use `--reset-then-reuse-values` rather than
+`--reuse-values` to pick up newly added defaults. When the database is not migrated externally,
 `database.migrateOnUpgrade=true` runs a single pre-upgrade Job from the target image and blocks
 the rollout if it fails. Do not run overlapping upgrades or manage the same database with multiple
 releases running schema hooks. A Helm rollback does **not** roll back the database. If a Job fails,
@@ -186,12 +213,21 @@ running old Pods (or compatibility is unknown), schedule downtime: suspend any r
 autoscaler that would restore replicas, scale the old Deployment to zero and wait for its Pods to
 exit, then run `helm upgrade` with the desired replica count.
 
+With `migrateOnUpgrade=false`, apply all required alterations using the target image before
+upgrading. Logto refuses to start on a schema with missing alterations or required row-level
+security. This is especially important with `Recreate`: the old Pods are already gone when the
+new Pods start, so an unmigrated schema can take the entire service offline.
+
 ## CI smoke test
 
 The [Helm workflow](../../.github/workflows/helm-test.yml) lints and renders the chart, then
 installs it into a fresh kind cluster with temporary PostgreSQL. It verifies database seed and
 startup, the core health endpoint, OIDC discovery, and the Admin Console welcome redirect. It
 does not test Ingress, TLS, optional Redis at runtime, or a database upgrade.
+It uses the published image pinned by `Chart.yaml`'s `appVersion`, not an image built from the PR.
+Changes to the Dockerfile or runtime write paths require separate testing with a locally built
+image, especially under the chart's non-root and read-only defaults. Before publishing this chart,
+agree with maintainers on keeping `appVersion` aligned with released `@logto/core` image tags.
 
 To run the same smoke test locally with Docker, kind, kubectl, and Helm installed, run
 `bash .scripts/helm/smoke.sh` from the repository root. The script uses a separate kubeconfig and

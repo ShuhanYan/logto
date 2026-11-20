@@ -1,4 +1,4 @@
-{{- if .Values.autoscaling.enabled }}
+{{- if (dig "enabled" false (.Values.autoscaling | default dict)) }}
 {{- $min := int .Values.autoscaling.minReplicas }}
 {{- $max := int .Values.autoscaling.maxReplicas }}
 {{- $target := int .Values.autoscaling.targetCPUUtilizationPercentage }}
