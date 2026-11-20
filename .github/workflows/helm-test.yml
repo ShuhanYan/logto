@@ -1,0 +1,84 @@
+name: Helm Test
+
+on:
+  pull_request:
+    paths:
+      - 'helm/**'
+      - '.scripts/helm/smoke.sh'
+      - '.github/workflows/helm-test.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'helm/**'
+      - '.scripts/helm/smoke.sh'
+      - '.github/workflows/helm-test.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+      - name: Lint and render chart
+        run: |
+          set -euo pipefail
+          chart=helm/logto
+          db=(--set database.existingSecret=logto-db)
+          helm lint --strict "$chart" "${db[@]}" --set database.seedOnInstall=true
+          helm template logto "$chart" "${db[@]}" --set database.seedOnInstall=true > "$RUNNER_TEMP/logto-install.yaml"
+          grep -q '^    helm.sh/hook: pre-install$' "$RUNNER_TEMP/logto-install.yaml"
+          grep -A2 '^          livenessProbe:$' "$RUNNER_TEMP/logto-install.yaml" | grep -q 'tcpSocket:'
+          # Older experimental releases can lack these sections when upgraded with --reuse-values.
+          helm template logto "$chart" "${db[@]}" --is-upgrade \
+            --set redis=null --set autoscaling=null --set podDisruptionBudget=null --set strategy=null > /dev/null
+          helm template logto "$chart" "${db[@]}" --is-upgrade \
+            --set database.migrateOnUpgrade=true --set strategy.type=Recreate \
+            --set replicaCount=2 --set podDisruptionBudget.enabled=true \
+            --set ingress.enabled=true --set ingress.host=login.example.com \
+            --set ingress.adminHost=admin.example.com --set endpoint=https://login.example.com \
+            --set adminEndpoint=https://admin.example.com > "$RUNNER_TEMP/logto-upgrade.yaml"
+          grep -q '^    helm.sh/hook: pre-upgrade$' "$RUNNER_TEMP/logto-upgrade.yaml"
+          grep -q '^kind: Ingress$' "$RUNNER_TEMP/logto-upgrade.yaml"
+          grep -q '^kind: PodDisruptionBudget$' "$RUNNER_TEMP/logto-upgrade.yaml"
+          helm template logto "$chart" "${db[@]}" --set redis.mode=bundled \
+            --set redis.existingSecret=logto-redis-auth > "$RUNNER_TEMP/logto-redis-bundled.yaml"
+          grep -q '^# Source: logto/templates/redis.yaml$' "$RUNNER_TEMP/logto-redis-bundled.yaml"
+          helm template logto "$chart" "${db[@]}" --set redis.mode=external \
+            --set redis.existingSecret=logto-redis-url > "$RUNNER_TEMP/logto-redis-external.yaml"
+          grep -q '^ *name: "logto-redis-url"$' "$RUNNER_TEMP/logto-redis-external.yaml"
+          if grep -q '^# Source: logto/templates/redis.yaml$' \
+            "$RUNNER_TEMP/logto-redis-external.yaml" "$RUNNER_TEMP/logto-install.yaml"; then
+            echo 'Redis resources must only be rendered in bundled mode' >&2
+            exit 1
+          fi
+          helm template logto "$chart" "${db[@]}" --set autoscaling.enabled=true \
+            --set resources.requests.cpu=250m --set podDisruptionBudget.enabled=true > "$RUNNER_TEMP/logto-hpa.yaml"
+          grep -q '^kind: HorizontalPodAutoscaler$' "$RUNNER_TEMP/logto-hpa.yaml"
+          grep -q '^kind: PodDisruptionBudget$' "$RUNNER_TEMP/logto-hpa.yaml"
+          grep -q '^  replicas: 1$' "$RUNNER_TEMP/logto-install.yaml"
+          if grep -q '^  replicas:' "$RUNNER_TEMP/logto-hpa.yaml" || \
+            grep -q '^kind: HorizontalPodAutoscaler$' "$RUNNER_TEMP/logto-install.yaml"; then
+            echo 'Fixed replicas and autoscaling must be mutually exclusive' >&2
+            exit 1
+          fi
+
+  smoke:
+    needs: helm
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+      - uses: helm/kind-action@v1.13.0
+        with:
+          version: v0.30.0
+          install_only: true
+      - name: Install Logto and check its endpoints
+        run: bash .scripts/helm/smoke.sh
