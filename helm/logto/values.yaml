@@ -1,0 +1,43 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/logto-io/logto
+  tag: "" # Defaults to the chart's appVersion. Pin to an exact release for upgrades.
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+database:
+  existingSecret: ""
+  secretKey: DB_URL
+  # For a fresh, empty database only. The Secret and database must already exist.
+  seedOnInstall: false
+  # Run alterations from the target release image before rolling out its Pods.
+  migrateOnUpgrade: false
+
+# Public origins, required when using Ingress. Keep the two hosts separate.
+endpoint: ""
+adminEndpoint: ""
+trustProxyHeader: false
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: ""
+  adminHost: ""
+  tls: []
+
+# Additional Kubernetes EnvVar entries (including valueFrom for Secrets).
+extraEnv: []
+resources: {}
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
