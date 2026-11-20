@@ -1,9 +1,15 @@
 replicaCount: 1
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
 strategy:
   type: RollingUpdate
 
 podDisruptionBudget:
-  enabled: false # Only rendered for two or more replicas.
+  enabled: false # Only rendered when the fixed replica count or HPA minimum is at least two.
   maxUnavailable: 1
 
 image:

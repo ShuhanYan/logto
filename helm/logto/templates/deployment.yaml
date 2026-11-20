@@ -5,7 +5,9 @@ metadata:
   labels:
     {{- include "logto.labels" . | nindent 4 }}
 spec:
+  {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
+  {{- end }}
   strategy:
     {{- if eq .Values.strategy.type "Recreate" }}
     type: Recreate

@@ -140,9 +140,31 @@ Pod types. Provide an existing ServiceAccount in the release namespace if you se
 chart disables automatic ServiceAccount token mounts. Workload identity injection by the platform
 may still work independently of that setting.
 
-Set `podDisruptionBudget.enabled=true` for a release with two or more replicas to limit voluntary
-evictions (`podDisruptionBudget.maxUnavailable` defaults to `1`). It does not govern Deployment
-rollouts or protect against involuntary outages.
+Set `podDisruptionBudget.enabled=true` to limit voluntary evictions when the fixed replica count
+or HPA minimum is at least two (`podDisruptionBudget.maxUnavailable` defaults to `1`). It does not
+govern Deployment rollouts or protect against involuntary outages.
+
+## Optional autoscaling
+
+The Horizontal Pod Autoscaler (HPA) is disabled by default. To enable CPU-based scaling, make
+sure the cluster exposes `metrics.k8s.io` (for example via Metrics Server) and set a CPU request:
+
+```yaml
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+resources:
+  requests:
+    cpu: 250m
+```
+
+When enabled, the HPA manages the Logto Deployment's replica count instead of `replicaCount`.
+Size the CPU request with load tests and cap `maxReplicas` to fit the PostgreSQL connection
+budget. When enabling the HPA on an existing release, plan for a possible brief drop to one
+replica as Helm removes the fixed replica count. For a database upgrade that requires downtime,
+disable autoscaling first so the HPA cannot restore the old Pods before the migration.
 
 ## Upgrade
 
@@ -163,3 +185,14 @@ does **not** stop old Pods before the pre-upgrade hook runs. If the migration is
 running old Pods (or compatibility is unknown), schedule downtime: suspend any reconciler or
 autoscaler that would restore replicas, scale the old Deployment to zero and wait for its Pods to
 exit, then run `helm upgrade` with the desired replica count.
+
+## CI smoke test
+
+The [Helm workflow](../../.github/workflows/helm-test.yml) lints and renders the chart, then
+installs it into a fresh kind cluster with temporary PostgreSQL. It verifies database seed and
+startup, the core health endpoint, OIDC discovery, and the Admin Console welcome redirect. It
+does not test Ingress, TLS, optional Redis at runtime, or a database upgrade.
+
+To run the same smoke test locally with Docker, kind, kubectl, and Helm installed, run
+`bash .scripts/helm/smoke.sh` from the repository root. The script uses a separate kubeconfig and
+deletes only the cluster it creates.
