@@ -95,7 +95,8 @@ YAML
 
 "${k[@]}" rollout status deployment/postgres --timeout=2m
 helm --kube-context "kind-$cluster" --namespace "$namespace" install logto "$repo_root/helm/logto" \
-  --set database.existingSecret=logto-db --set database.seedOnInstall=true --wait --timeout 4m
+  --set database.existingSecret=logto-db --set database.seedOnInstall=true \
+  --set endpoint=http://logto:3001 --set adminEndpoint=http://logto:3002 --wait --timeout 4m
 
 "${k[@]}" exec -i deployment/logto -- node --input-type=module - <<'JS'
 import assert from 'node:assert/strict';
@@ -106,7 +107,7 @@ assert.equal((await get(3001, '/api/status')).status, 204);
 const discovery = await get(3001, '/oidc/.well-known/openid-configuration');
 assert.equal(discovery.status, 200);
 const { issuer, jwks_uri } = await discovery.json();
-assert.match(issuer, /\/oidc$/);
+assert.equal(issuer, 'http://logto:3001/oidc');
 assert.equal(new URL(jwks_uri).origin, new URL(issuer).origin);
 
 const admin = await get(3002, '/');
