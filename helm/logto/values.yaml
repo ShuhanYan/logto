@@ -1,4 +1,10 @@
 replicaCount: 1
+strategy:
+  type: RollingUpdate
+
+podDisruptionBudget:
+  enabled: false # Only rendered for two or more replicas.
+  maxUnavailable: 1
 
 image:
   repository: ghcr.io/logto-io/logto
@@ -13,6 +19,17 @@ database:
   seedOnInstall: false
   # Run alterations from the target release image before rolling out its Pods.
   migrateOnUpgrade: false
+  # Extra environment variables for seed and migration Jobs only.
+  extraEnv: []
+
+# Optional central cache: disabled, bundled (in-cluster), or external.
+redis:
+  mode: disabled
+  existingSecret: ""
+  passwordKey: REDIS_PASSWORD # Used in bundled mode; use a random URL-safe password.
+  urlKey: REDIS_URL # Used in external mode.
+  image: redis:7.4-alpine
+  resources: {}
 
 # Public origins, required when using Ingress. Keep the two hosts separate.
 endpoint: ""
@@ -27,9 +44,17 @@ ingress:
   adminHost: ""
   tls: []
 
-# Additional Kubernetes EnvVar entries (including valueFrom for Secrets).
+# Extra environment variables for the application Pods only.
 extraEnv: []
 resources: {}
+
+# Applied to application and database Job Pods. An existing ServiceAccount is optional.
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+serviceAccountName: ""
+
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 1000
@@ -39,5 +64,6 @@ podSecurityContext:
     type: RuntimeDefault
 securityContext:
   allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
   capabilities:
     drop: [ALL]

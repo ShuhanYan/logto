@@ -2,12 +2,12 @@
 {{- $host := required "ingress.host is required when enabling Ingress" .Values.ingress.host }}
 {{- $endpoint := required "endpoint is required when enabling Ingress" .Values.endpoint }}
 {{- if not (or (eq $endpoint (printf "https://%s" $host)) (eq $endpoint (printf "http://%s" $host))) }}
-{{- fail "endpoint must be the public origin for ingress.host (no trailing slash or path)" }}
+{{- fail "endpoint must be http:// or https:// followed by ingress.host, with no explicit port, path, or trailing slash" }}
 {{- end }}
 {{- with .Values.ingress.adminHost }}
 {{- $adminEndpoint := required "adminEndpoint is required when enabling the admin Ingress" $.Values.adminEndpoint }}
 {{- if or (eq . $host) (not (or (eq $adminEndpoint (printf "https://%s" .)) (eq $adminEndpoint (printf "http://%s" .)))) }}
-{{- fail "adminEndpoint must be the public origin for ingress.adminHost, which must differ from ingress.host" }}
+{{- fail "adminEndpoint must be http:// or https:// followed by ingress.adminHost, with no explicit port, path, or trailing slash; ingress.adminHost must differ from ingress.host" }}
 {{- end }}
 {{- end }}
 apiVersion: networking.k8s.io/v1
@@ -15,7 +15,7 @@ kind: Ingress
 metadata:
   name: {{ include "logto.fullname" . }}
   labels:
-    {{- include "logto.selectorLabels" . | nindent 4 }}
+    {{- include "logto.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
