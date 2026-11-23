@@ -12,6 +12,7 @@ concurrency:
 jobs:
   update-metadata:
     runs-on: ubuntu-latest
+    # Scope label and assignee writes to this job; never check out PR code here.
     permissions:
       issues: write
       pull-requests: write
