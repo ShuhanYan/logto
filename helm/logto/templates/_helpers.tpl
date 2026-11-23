@@ -77,7 +77,7 @@ app.kubernetes.io/component: cache
 {{- end -}}
 
 {{- define "logto.redisEnv" -}}
-{{- $mode := default "disabled" (.Values.redis | default dict).mode -}}
+{{- $mode := .Values.redis.mode -}}
 {{- if not (has $mode (list "disabled" "bundled" "external")) -}}
 {{- fail "redis.mode must be disabled, bundled, or external" -}}
 {{- end -}}

@@ -33,9 +33,6 @@ jobs:
           helm template logto "$chart" "${db[@]}" --set database.seedOnInstall=true > "$RUNNER_TEMP/logto-install.yaml"
           grep -q '^    helm.sh/hook: pre-install$' "$RUNNER_TEMP/logto-install.yaml"
           grep -A2 '^          livenessProbe:$' "$RUNNER_TEMP/logto-install.yaml" | grep -q 'tcpSocket:'
-          # Older experimental releases can lack these sections when upgraded with --reuse-values.
-          helm template logto "$chart" "${db[@]}" --is-upgrade \
-            --set redis=null --set autoscaling=null --set podDisruptionBudget=null --set strategy=null > /dev/null
           helm template logto "$chart" "${db[@]}" --is-upgrade \
             --set database.migrateOnUpgrade=true --set strategy.type=Recreate \
             --set replicaCount=2 --set podDisruptionBudget.enabled=true \

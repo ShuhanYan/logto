@@ -194,9 +194,9 @@ extraEnv:
 ## Upgrade
 
 Read the [Logto upgrade guide](https://docs.logto.io/logto-oss/upgrading-oss-version), back up the
-database, and pin the target image version. Pass your values file when upgrading; if carrying
-forward settings from an older experimental chart, use `--reset-then-reuse-values` rather than
-`--reuse-values` to pick up newly added defaults. When the database is not migrated externally,
+database, and pin the target image version. Pass your values file when upgrading, or use
+`--reset-then-reuse-values` (Helm 3.14 or later) to carry forward your overrides while picking up new
+defaults. When the database is not migrated externally,
 `database.migrateOnUpgrade=true` runs a single pre-upgrade Job from the target image and blocks
 the rollout if it fails. Do not run overlapping upgrades or manage the same database with multiple
 releases running schema hooks. A Helm rollback does **not** roll back the database. If a Job fails,

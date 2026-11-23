@@ -1,4 +1,4 @@
-{{- if eq (default "disabled" (.Values.redis | default dict).mode) "bundled" }}
+{{- if eq .Values.redis.mode "bundled" }}
 apiVersion: v1
 kind: Service
 metadata:
