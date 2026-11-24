@@ -9,7 +9,7 @@ spec:
   replicas: {{ .Values.replicaCount }}
   {{- end }}
   strategy:
-    {{- if or .Values.database.testPostgresql.enabled (eq .Values.strategy.type "Recreate") }}
+    {{- if eq .Values.strategy.type "Recreate" }}
     type: Recreate
     # Clear the API-defaulted RollingUpdate settings when switching strategies.
     rollingUpdate: null
@@ -34,54 +34,6 @@ spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- if .Values.database.testPostgresql.enabled }}
-      initContainers:
-        - name: wait-for-test-db
-          image: {{ .Values.database.testPostgresql.image | quote }}
-          securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
-          command: ["sh", "-ec"]
-          args:
-            - |
-              for attempt in $(seq 1 60); do
-                if psql -X -Atqc 'select 1' >/dev/null 2>&1; then exit 0; fi
-                sleep 2
-              done
-              echo 'Test PostgreSQL is not accepting connections' >&2
-              exit 1
-          env:
-            - name: PGHOST
-              value: {{ include "logto.testPostgresqlName" . | quote }}
-            - name: PGDATABASE
-              value: logto
-            - name: PGUSER
-              value: postgres
-            - name: PGPASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "logto.testPostgresqlName" . | quote }}
-                  key: POSTGRES_PASSWORD
-            - name: PGCONNECT_TIMEOUT
-              value: "2"
-        - name: seed-test-db
-          image: {{ include "logto.image" . | quote }}
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
-          command: ["npm", "run", "cli", "--"]
-          args: ["db", "seed", "--swe"]
-          env:
-            {{- include "logto.dbEnv" . | nindent 12 }}
-            - name: npm_config_cache
-              value: /tmp/npm
-            - name: CI
-              value: "true"
-            {{- with .Values.database.extraEnv }}
-            {{- toYaml . | nindent 12 }}
-            {{- end }}
-          volumeMounts:
-            {{- include "logto.writableMounts" . | nindent 12 }}
       {{- end }}
       containers:
         - name: logto

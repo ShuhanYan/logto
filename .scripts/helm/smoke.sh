@@ -7,19 +7,19 @@ export KUBECONFIG="$work_dir/kubeconfig"
 cluster="logto-helm-$$"
 namespace=logto-smoke
 k=(kubectl --context "kind-$cluster" --namespace "$namespace")
+h=(helm --kube-context "kind-$cluster" --namespace "$namespace")
 
 cleanup() {
   local status=$?
   if (( status != 0 )) && [[ -s "$KUBECONFIG" ]]; then
     "${k[@]}" get pods,jobs,services -o wide || true
     "${k[@]}" get events --sort-by=.lastTimestamp || true
-    "${k[@]}" logs deployment/logto-postgres --tail=80 || true
+    "${k[@]}" logs deployment/postgres --tail=80 || true
     "${k[@]}" logs deployment/logto --tail=80 || true
-    "${k[@]}" logs deployment/logto -c wait-for-test-db --tail=80 || true
-    "${k[@]}" logs deployment/logto -c seed-test-db --tail=80 || true
+    "${k[@]}" logs job/logto-seed --tail=80 || true
   fi
   kind delete cluster --name "$cluster" || true
-  rm -f -- "$KUBECONFIG"
+  rm -f -- "$KUBECONFIG" "$work_dir/postgres-password"
   rmdir -- "$work_dir" || true
 }
 trap cleanup EXIT
@@ -28,9 +28,13 @@ kind create cluster --name "$cluster" --kubeconfig "$KUBECONFIG" --wait 120s
 "${k[@]}" create namespace "$namespace"
 "${k[@]}" label namespace "$namespace" pod-security.kubernetes.io/enforce=restricted
 
-helm --kube-context "kind-$cluster" --namespace "$namespace" install logto "$repo_root/helm/logto" \
-  --set database.testPostgresql.enabled=true \
-  --set endpoint=http://logto:3001 --set adminEndpoint=http://logto:3002 --wait --timeout 6m
+(umask 077; password=$(openssl rand -hex 24); printf '%s' "$password" > "$work_dir/postgres-password")
+"${h[@]}" install test-postgresql "$repo_root/.scripts/helm/test-postgresql" \
+  --set-file "password=$work_dir/postgres-password" --wait --timeout 2m
+rm -f -- "$work_dir/postgres-password"
+
+"${h[@]}" install logto "$repo_root/helm/logto" \
+  -f "$repo_root/helm/logto/ci/smoke-values.yaml" --wait --timeout 4m
 
 "${k[@]}" exec -i deployment/logto -- node --input-type=module - <<'JS'
 import assert from 'node:assert/strict';

@@ -27,10 +27,6 @@ database:
   migrateOnUpgrade: false
   # Extra environment variables for seed and migration Jobs only.
   extraEnv: []
-  # Disposable PostgreSQL for local and CI tests only. Never enable in production.
-  testPostgresql:
-    enabled: false
-    image: postgres:17-alpine
 
 # Optional central cache: disabled, bundled (in-cluster), or external.
 redis:

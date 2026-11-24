@@ -4,13 +4,13 @@ on:
   pull_request:
     paths:
       - 'helm/**'
-      - '.scripts/helm/smoke.sh'
+      - '.scripts/helm/**'
       - '.github/workflows/helm-test.yml'
   push:
     branches: [master]
     paths:
       - 'helm/**'
-      - '.scripts/helm/smoke.sh'
+      - '.scripts/helm/**'
       - '.github/workflows/helm-test.yml'
 
 permissions:
@@ -28,7 +28,8 @@ jobs:
         run: helm plugin install https://github.com/helm-unittest/helm-unittest --version 1.0.3
       - name: Lint and test chart templates
         run: |
-          helm lint --strict helm/logto --set database.existingSecret=logto-db --set database.seedOnInstall=true
+          helm lint --strict helm/logto -f helm/logto/ci/smoke-values.yaml
+          helm lint --strict .scripts/helm/test-postgresql --set-string password=lint-only
           helm unittest --strict helm/logto
 
   smoke:
