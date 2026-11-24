@@ -169,9 +169,10 @@ upgrading. Logto refuses to start on a schema with missing alterations or requir
 security. This is especially important with `Recreate`: the old Pods are already gone when the
 new Pods start, so an unmigrated schema can take the entire service offline.
 
-## CI smoke test
+## Testing the chart
 
-The [Helm workflow](../../.github/workflows/helm-test.yml) lints and renders the chart, then
+The [Helm workflow](../../.github/workflows/helm-test.yml) lints the chart and runs its template
+unit tests in `tests/`, then
 installs it into a fresh kind cluster with temporary PostgreSQL. It verifies database seed and
 startup, the core health endpoint, OIDC discovery, and the Admin Console welcome redirect. It
 does not test Ingress, TLS, optional Redis at runtime, or a database upgrade.
@@ -179,6 +180,13 @@ It uses the published image pinned by `Chart.yaml`'s `appVersion`, not an image 
 Changes to the Dockerfile or runtime write paths require separate testing with a locally built
 image, especially under the chart's non-root and read-only defaults. Before publishing this chart,
 agree with maintainers on keeping `appVersion` aligned with released `@logto/core` image tags.
+
+To run the template tests locally, install the same plugin version as CI and run:
+
+```sh
+helm plugin install https://github.com/helm-unittest/helm-unittest --version 1.0.3
+helm unittest --strict helm/logto
+```
 
 To run the same smoke test locally with Docker, kind, kubectl, and Helm installed, run
 `bash .scripts/helm/smoke.sh` from the repository root. The script uses a separate kubeconfig and
