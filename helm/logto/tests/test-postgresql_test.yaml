@@ -1,0 +1,59 @@
+suite: Disposable PostgreSQL
+templates:
+  - test-postgresql.yaml
+  - deployment.yaml
+  - database-job.yaml
+release:
+  name: logto
+tests:
+  - it: creates no database resources by default
+    template: test-postgresql.yaml
+    set:
+      database.existingSecret: external-db
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: creates a Secret, an internal Service, and a disposable database
+    template: test-postgresql.yaml
+    set:
+      database.testPostgresql.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 3
+      - equal:
+          path: metadata.name
+          value: logto-postgres
+      - equal:
+          path: spec.ports[0].port
+          value: 5432
+        documentSelector:
+          path: kind
+          value: Service
+      - equal:
+          path: spec.template.spec.volumes[0].emptyDir
+          value: {}
+        documentSelector:
+          path: kind
+          value: Deployment
+  - it: waits for and seeds the disposable database before starting Logto
+    template: deployment.yaml
+    set:
+      database.testPostgresql.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: wait-for-test-db
+      - equal:
+          path: spec.template.spec.initContainers[1].args
+          value: [db, seed, --swe]
+      - equal:
+          path: spec.template.spec.containers[0].env[0].valueFrom.secretKeyRef.name
+          value: logto-postgres
+  - it: does not create a pre-install hook for the disposable database
+    template: database-job.yaml
+    set:
+      database.testPostgresql.enabled: true
+      database.seedOnInstall: true
+    asserts:
+      - hasDocuments:
+          count: 0

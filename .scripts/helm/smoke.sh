@@ -13,9 +13,10 @@ cleanup() {
   if (( status != 0 )) && [[ -s "$KUBECONFIG" ]]; then
     "${k[@]}" get pods,jobs,services -o wide || true
     "${k[@]}" get events --sort-by=.lastTimestamp || true
-    "${k[@]}" logs deployment/postgres --tail=80 || true
+    "${k[@]}" logs deployment/logto-postgres --tail=80 || true
     "${k[@]}" logs deployment/logto --tail=80 || true
-    "${k[@]}" logs job/logto-seed --tail=80 || true
+    "${k[@]}" logs deployment/logto -c wait-for-test-db --tail=80 || true
+    "${k[@]}" logs deployment/logto -c seed-test-db --tail=80 || true
   fi
   kind delete cluster --name "$cluster" || true
   rm -f -- "$KUBECONFIG"
@@ -27,76 +28,9 @@ kind create cluster --name "$cluster" --kubeconfig "$KUBECONFIG" --wait 120s
 "${k[@]}" create namespace "$namespace"
 "${k[@]}" label namespace "$namespace" pod-security.kubernetes.io/enforce=restricted
 
-password=$(openssl rand -hex 24)
-"${k[@]}" create secret generic logto-db \
-  --from-file=POSTGRES_PASSWORD=<(printf '%s' "$password") \
-  --from-file=DB_URL=<(printf 'postgres://postgres:%s@postgres:5432/logto' "$password")
-unset password
-
-"${k[@]}" apply -f - <<'YAML'
-apiVersion: v1
-kind: Service
-metadata:
-  name: postgres
-spec:
-  selector:
-    app: postgres
-  ports:
-    - port: 5432
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: postgres
-spec:
-  selector:
-    matchLabels:
-      app: postgres
-  template:
-    metadata:
-      labels:
-        app: postgres
-    spec:
-      automountServiceAccountToken: false
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 70
-        runAsGroup: 70
-        fsGroup: 70
-        seccompProfile:
-          type: RuntimeDefault
-      containers:
-        - name: postgres
-          image: postgres:17-alpine
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: [ALL]
-          env:
-            - name: POSTGRES_DB
-              value: logto
-            - name: PGDATA
-              value: /var/lib/postgresql/data/pgdata
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: logto-db
-                  key: POSTGRES_PASSWORD
-          readinessProbe:
-            exec:
-              command: [pg_isready, -h, '127.0.0.1', -U, postgres, -d, logto]
-          volumeMounts:
-            - name: data
-              mountPath: /var/lib/postgresql/data
-      volumes:
-        - name: data
-          emptyDir: {}
-YAML
-
-"${k[@]}" rollout status deployment/postgres --timeout=2m
 helm --kube-context "kind-$cluster" --namespace "$namespace" install logto "$repo_root/helm/logto" \
-  --set database.existingSecret=logto-db --set database.seedOnInstall=true \
-  --set endpoint=http://logto:3001 --set adminEndpoint=http://logto:3002 --wait --timeout 4m
+  --set database.testPostgresql.enabled=true \
+  --set endpoint=http://logto:3001 --set adminEndpoint=http://logto:3002 --wait --timeout 6m
 
 "${k[@]}" exec -i deployment/logto -- node --input-type=module - <<'JS'
 import assert from 'node:assert/strict';

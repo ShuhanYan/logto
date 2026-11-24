@@ -1,4 +1,4 @@
-{{- $seed := and .Release.IsInstall .Values.database.seedOnInstall -}}
+{{- $seed := and .Release.IsInstall .Values.database.seedOnInstall (not .Values.database.testPostgresql.enabled) -}}
 {{- $migrate := and .Release.IsUpgrade .Values.database.migrateOnUpgrade -}}
 {{- if or $seed $migrate }}
 apiVersion: batch/v1

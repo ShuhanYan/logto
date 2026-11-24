@@ -1,6 +1,6 @@
 # Logto Helm chart (experimental)
 
-This chart installs Logto, not PostgreSQL. Supply a dedicated, reachable PostgreSQL database and
+By default this chart installs Logto without PostgreSQL. Supply a dedicated, reachable PostgreSQL database and
 an existing Kubernetes Secret in the release namespace containing its connection URL under `DB_URL`
 (configurable with `database.secretKey`). Pass the Secret's **name**, not the URL, to Helm. Logto
 needs permission to create PostgreSQL roles; check this with your managed database provider first.
@@ -169,11 +169,28 @@ upgrading. Logto refuses to start on a schema with missing alterations or requir
 security. This is especially important with `Recreate`: the old Pods are already gone when the
 new Pods start, so an unmigrated schema can take the entire service offline.
 
+## Disposable PostgreSQL (testing only)
+
+For local or CI tests, enable `database.testPostgresql.enabled` instead of supplying an external
+database. Helm creates a single PostgreSQL Pod, an internal Service, and a Secret with generated
+credentials. A Logto init container seeds the database automatically.
+
+```sh
+helm install logto ./helm/logto --namespace logto-test --create-namespace --wait --timeout 6m \
+  --set database.testPostgresql.enabled=true
+```
+
+**Do not use this mode in production.** Data lives in an `emptyDir` and is lost if the database
+Pod is replaced or the release is uninstalled. If the database Pod is replaced, reinstall the
+disposable release to start over. This mode supports one Logto replica with autoscaling disabled,
+cannot be combined with `database.existingSecret`, and does not support migration hooks. Use a
+dedicated external PostgreSQL instance for production or migration testing.
+
 ## Testing the chart
 
 The [Helm workflow](../../.github/workflows/helm-test.yml) lints the chart and runs its template
 unit tests in `tests/`, then
-installs it into a fresh kind cluster with temporary PostgreSQL. It verifies database seed and
+installs it into a fresh kind cluster using the disposable PostgreSQL option. It verifies database seed and
 startup, the core health endpoint, OIDC discovery, and the Admin Console welcome redirect. It
 does not test Ingress, TLS, optional Redis at runtime, or a database upgrade.
 It uses the published image pinned by `Chart.yaml`'s `appVersion`, not an image built from the PR.

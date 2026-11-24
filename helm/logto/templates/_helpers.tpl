@@ -49,8 +49,22 @@ affinity:
 - name: DB_URL
   valueFrom:
     secretKeyRef:
+      {{- if .Values.database.testPostgresql.enabled }}
+      name: {{ include "logto.testPostgresqlName" . | quote }}
+      key: DB_URL
+      {{- else }}
       name: {{ required "database.existingSecret is required" .Values.database.existingSecret | quote }}
       key: {{ .Values.database.secretKey | quote }}
+      {{- end }}
+{{- end -}}
+
+{{- define "logto.testPostgresqlName" -}}
+{{- printf "%s-postgres" (include "logto.fullname" .) -}}
+{{- end -}}
+
+{{- define "logto.testPostgresqlSelectorLabels" -}}
+app.kubernetes.io/name: {{ include "logto.testPostgresqlName" . | quote }}
+app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{- define "logto.redisName" -}}
