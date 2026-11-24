@@ -1,0 +1,38 @@
+name: Helm Test (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Ref or commit to test in this fork
+        required: true
+        default: shuhanyan-add-helm-chart
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  helm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+      - name: Lint and test chart templates
+        run: |
+          helm plugin install https://github.com/helm-unittest/helm-unittest --version 1.0.3
+          helm lint --strict helm/logto -f helm/logto/ci/smoke-values.yaml
+          helm lint --strict .scripts/helm/test-postgresql --set-string password=lint-only
+          helm unittest --strict helm/logto
+      - uses: helm/kind-action@v1.13.0
+        with:
+          version: v0.30.0
+          install_only: true
+      - name: Install Logto and check its endpoints
+        run: bash .scripts/helm/smoke.sh
