@@ -108,6 +108,16 @@ describe('adminUserRoutes', () => {
     authedRoutes: adminUserRoutes,
     tenantContext,
   });
+  const createExistenceRequester = (enabled: boolean) => {
+    const { isDevFeaturesEnabled } = EnvSet.values;
+    Reflect.set(EnvSet.values, 'isDevFeaturesEnabled', enabled);
+
+    try {
+      return createRequester({ authedRoutes: adminUserRoutes, tenantContext });
+    } finally {
+      Reflect.set(EnvSet.values, 'isDevFeaturesEnabled', isDevFeaturesEnabled);
+    }
+  };
 
   afterEach(() => {
     jest.clearAllMocks();
@@ -118,6 +128,25 @@ describe('adminUserRoutes', () => {
     const response = await userRequest.get('/users/foo');
     expect(response.status).toEqual(200);
     expect(response.body).toEqual(mockUserResponse);
+  });
+
+  describe('GET /users/:userId/exists', () => {
+    it.each([true, false])('returns exists=%s without fetching the profile', async (exists) => {
+      hasUserWithId.mockResolvedValueOnce(exists);
+      const response = await createExistenceRequester(true).get('/users/foo/exists');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ exists });
+      expect(hasUserWithId).toHaveBeenCalledWith('foo');
+      expect(findUserById).not.toHaveBeenCalled();
+    });
+
+    it('does not expose the route when dev features are disabled', async () => {
+      const response = await createExistenceRequester(false).get('/users/foo/exists');
+
+      expect(response.status).toBe(404);
+      expect(hasUserWithId).not.toHaveBeenCalled();
+    });
   });
 
   it('GET /users/:userId should not include passwordDigest/passwordAlgorithm by default', async () => {

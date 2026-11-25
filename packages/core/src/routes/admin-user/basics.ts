@@ -102,6 +102,24 @@ export default function adminUserBasicsRoutes<T extends ManagementApiRouter>(
     }
   );
 
+  // User existence checks on the Management API.
+  if (EnvSet.values.isDevFeaturesEnabled) {
+    router.get(
+      '/users/:userId/exists',
+      koaGuard({
+        params: object({ userId: string() }),
+        response: object({ exists: boolean() }),
+        status: [200],
+      }),
+      async (ctx, next) => {
+        const { userId } = ctx.guard.params;
+        ctx.body = { exists: await hasUserWithId(userId) };
+
+        return next();
+      }
+    );
+  }
+
   router.get(
     '/users/:userId/custom-data',
     koaGuard({
