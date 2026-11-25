@@ -100,6 +100,18 @@
         "description": "Delete user with the given ID. Note all associated data will be deleted cascadingly."
       }
     },
+    "/api/users/{userId}/exists": {
+      "get": {
+        "tags": ["Dev feature"],
+        "summary": "Check if a user exists",
+        "description": "Check whether the given user ID exists in the current tenant without returning profile data. Suspended users still count as existing.",
+        "responses": {
+          "200": {
+            "description": "Whether the user exists in the current tenant. Returns `false` if the given ID is not found."
+          }
+        }
+      }
+    },
     "/api/users/{userId}/custom-data": {
       "get": {
         "responses": {
