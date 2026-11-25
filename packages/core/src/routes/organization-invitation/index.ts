@@ -6,9 +6,11 @@ import {
 } from '@logto/schemas';
 import { z } from 'zod';
 
+import { EnvSet } from '#src/env-set/index.js';
 import RequestError from '#src/errors/RequestError/index.js';
 import { buildManagementApiContext, truncateMembershipDelta } from '#src/libraries/hook/utils.js';
 import koaGuard from '#src/middleware/koa-guard.js';
+import koaPagination from '#src/middleware/koa-pagination.js';
 import SchemaRouter from '#src/utils/SchemaRouter.js';
 import assertThat from '#src/utils/assert-that.js';
 
@@ -36,20 +38,38 @@ export default function organizationInvitationRoutes<T extends ManagementApiRout
     entityGuard: organizationInvitationEntityGuard,
   });
 
-  router.get(
-    '/',
-    koaGuard({
-      query: z
-        .object({ organizationId: z.string(), inviterId: z.string(), invitee: z.string() })
-        .partial(),
-      response: organizationInvitationEntityGuard.array(),
-      status: [200],
-    }),
-    async (ctx, next) => {
+  const listGuard = {
+    query: z
+      .object({ organizationId: z.string(), inviterId: z.string(), invitee: z.string() })
+      .partial(),
+    response: organizationInvitationEntityGuard.array(),
+    status: [200],
+  };
+
+  // Organization invitation list pagination.
+  if (EnvSet.values.isDevFeaturesEnabled) {
+    router.get('/', koaPagination({ isOptional: true }), koaGuard(listGuard), async (ctx, next) => {
+      const { guard, pagination } = ctx;
+
+      if (pagination.disabled) {
+        ctx.body = await invitations.findEntities(guard.query);
+      } else {
+        const [totalCount, entities] = await Promise.all([
+          invitations.countEntities(guard.query),
+          invitations.findEntities(guard.query, pagination),
+        ]);
+        ctx.pagination.totalCount = totalCount;
+        ctx.body = entities;
+      }
+
+      return next();
+    });
+  } else {
+    router.get('/', koaGuard(listGuard), async (ctx, next) => {
       ctx.body = await invitations.findEntities(ctx.guard.query);
       return next();
-    }
-  );
+    });
+  }
 
   router.post(
     '/',
