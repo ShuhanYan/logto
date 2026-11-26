@@ -1,6 +1,9 @@
 import { generateStandardId } from '@logto/shared';
 
 import { createUser, deleteUser } from '#src/api/admin-user.js';
+import { authedAdminApi } from '#src/api/api.js';
+import { isDevFeaturesEnabled } from '#src/constants.js';
+import { expectRejects } from '#src/helpers/index.js';
 import { OrganizationApiTest, OrganizationInvitationApiTest } from '#src/helpers/organization.js';
 
 const randomId = () => generateStandardId(4);
@@ -8,6 +11,13 @@ const randomId = () => generateStandardId(4);
 describe('organization invitation creation', () => {
   const invitationApi = new OrganizationInvitationApiTest();
   const organizationApi = new OrganizationApiTest();
+
+  const createInvitation = async (organizationId: string) =>
+    invitationApi.create({
+      organizationId,
+      invitee: `${randomId()}@example.com`,
+      expiresAt: Date.now() + 1_000_000,
+    });
 
   afterEach(async () => {
     await Promise.all([
@@ -76,7 +86,7 @@ describe('organization invitation creation', () => {
     expect(invitations[0]?.invitee.toLocaleLowerCase()).toBe(invitee.toLowerCase());
   });
 
-  it('should have no pagination', async () => {
+  it('should return all matching invitations when pagination parameters are omitted', async () => {
     const organization = await organizationApi.create({ name: 'test' });
     await Promise.all(
       Array.from({ length: 30 }, async () =>
@@ -92,5 +102,52 @@ describe('organization invitation creation', () => {
       new URLSearchParams({ organizationId: organization.id })
     );
     expect(invitations.length).toBe(30);
+  });
+
+  it('should paginate matching invitations only when pagination is enabled', async () => {
+    const organization = await organizationApi.create({ name: 'test' });
+    const otherOrganization = await organizationApi.create({ name: 'test' });
+    const first = await createInvitation(organization.id);
+    const second = await createInvitation(organization.id);
+    await createInvitation(otherOrganization.id);
+
+    const fetchPage = async (page: number) =>
+      authedAdminApi.get('organization-invitations', {
+        searchParams: new URLSearchParams({
+          organizationId: organization.id,
+          page: String(page),
+          page_size: '1',
+        }),
+      });
+
+    const pageOne = await fetchPage(1);
+
+    if (!isDevFeaturesEnabled) {
+      expect(pageOne.headers.has('Total-Number')).toBe(false);
+      expect(pageOne.headers.has('Link')).toBe(false);
+      expect(await pageOne.json()).toHaveLength(2);
+      return;
+    }
+
+    expect(pageOne.headers.get('Total-Number')).toBe('2');
+    expect(pageOne.headers.get('Link')).toContain(
+      `organizationId=${organization.id}&page=2&page_size=1>; rel="next"`
+    );
+
+    const pageTwo = await fetchPage(2);
+    expect(pageTwo.headers.get('Total-Number')).toBe('2');
+    const pages = await Promise.all([pageOne.json(), pageTwo.json()]);
+    expect(pages).toEqual(expect.arrayContaining([[first], [second]]));
+
+    const pageThree = await fetchPage(3);
+    expect(pageThree.headers.get('Total-Number')).toBe('2');
+    expect(await pageThree.json()).toEqual([]);
+  });
+
+  (isDevFeaturesEnabled ? it : it.skip)('should reject invalid pagination parameters', async () => {
+    await expectRejects(authedAdminApi.get('organization-invitations?page_size=101'), {
+      code: 'guard.invalid_pagination',
+      status: 400,
+    });
   });
 });

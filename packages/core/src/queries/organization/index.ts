@@ -147,6 +147,9 @@ type OrganizationInvitationSearchOptions = {
   invitee?: string;
 };
 
+type OrganizationInvitationListFilters = Omit<OrganizationInvitationSearchOptions, 'invitationId'>;
+type OrganizationInvitationPagination = { limit: number; offset: number };
+
 class OrganizationInvitationsQueries extends SchemaQueries<
   OrganizationInvitationKeys,
   CreateOrganizationInvitation,
@@ -163,9 +166,20 @@ class OrganizationInvitationsQueries extends SchemaQueries<
 
   // We don't override `.findAll()` since the function signature is different from the base class.
   async findEntities(
-    options: Omit<OrganizationInvitationSearchOptions, 'invitationId'>
+    options: OrganizationInvitationListFilters,
+    pagination?: OrganizationInvitationPagination
   ): Promise<Readonly<OrganizationInvitationEntity[]>> {
-    return this.pool.any(this.#findEntity({ ...options, invitationId: undefined }));
+    return this.pool.any(this.#findEntity({ ...options, invitationId: undefined }, pagination));
+  }
+
+  async countEntities(filters: OrganizationInvitationListFilters): Promise<number> {
+    const { table } = convertToIdentifiers(OrganizationInvitations);
+
+    return this.pool.oneFirst<number>(sql`
+      select count(*)::int4
+      from ${table}
+      ${this.#where(filters)}
+    `);
   }
 
   async updateExpiredEntities({
@@ -187,12 +201,27 @@ class OrganizationInvitationsQueries extends SchemaQueries<
     `);
   }
 
-  #findEntity({
+  #where({
     invitationId,
     organizationId,
     inviterId,
     invitee,
   }: OrganizationInvitationSearchOptions) {
+    const { fields } = convertToIdentifiers(OrganizationInvitations, true);
+
+    return sql`
+      where true
+      ${conditionalSql(invitationId, (id) => sql`and ${fields.id} = ${id}`)}
+      ${conditionalSql(organizationId, (id) => sql`and ${fields.organizationId} = ${id}`)}
+      ${conditionalSql(inviterId, (id) => sql`and ${fields.inviterId} = ${id}`)}
+      ${conditionalSql(invitee, (email) => sql`and lower(${fields.invitee}) = lower(${email})`)}
+    `;
+  }
+
+  #findEntity(
+    options: OrganizationInvitationSearchOptions,
+    pagination?: OrganizationInvitationPagination
+  ) {
     const { table, fields } = convertToIdentifiers(OrganizationInvitations, true);
     const roleRelations = convertToIdentifiers(OrganizationInvitationRoleRelations, true);
     const roles = convertToIdentifiers(OrganizationRoles, true);
@@ -226,23 +255,13 @@ class OrganizationInvitationsQueries extends SchemaQueries<
         on ${roleRelations.fields.organizationInvitationId} = ${fields.id}
       left join ${roles.table}
         on ${roles.fields.id} = ${roleRelations.fields.organizationRoleId}
-      where true
-      ${conditionalSql(invitationId, (id) => {
-        return sql`and ${fields.id} = ${id}`;
-      })}
-      ${conditionalSql(organizationId, (id) => {
-        return sql`and ${fields.organizationId} = ${id}`;
-      })}
-      ${conditionalSql(inviterId, (id) => {
-        return sql`and ${fields.inviterId} = ${id}`;
-      })}
-      ${conditionalSql(invitee, (email) => {
-        return sql`and lower(${fields.invitee}) = lower(${email})`;
-      })}
+      ${this.#where(options)}
       group by ${fields.id}
       ${conditionalSql(this.orderBy, ({ field, order }) => {
-        return sql`order by ${fields[field]} ${order === 'desc' ? sql`desc` : sql`asc`}`;
+        return sql`order by ${fields[field]} ${order === 'desc' ? sql`desc` : sql`asc`}
+          ${conditionalSql(pagination, () => sql`, ${fields.id} desc`)}`;
       })}
+      ${conditionalSql(pagination, ({ limit, offset }) => sql`limit ${limit} offset ${offset}`)}
     `;
   }
 }
